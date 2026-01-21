@@ -4,8 +4,8 @@ const require = createRequire(import.meta.url);
 const {serve} = require('@upstash/workflow/express');
 
 import Subscription from '../models/subscription.model.js';
-
-const REMAINDERS = [7,5,3,1]
+import {sendRemainderEmail} from '../utils/send-email.js';
+const REMAINDERS = [7,5,2,1]
 
 export const sendRemainders = serve(async (context)=> {
     const { subscriptionId } = context.requestPayload; 
@@ -23,16 +23,24 @@ export const sendRemainders = serve(async (context)=> {
         const remaindDate = renewalDate.subtract(daysBefore,'day');
 
         if(remaindDate.isAfter(dayjs())){
-            await sleepUntilRemainder(context,`Remainder ${daysBefore} days Before`, remaindDate);
+            await sleepUntilRemainder(context,`${daysBefore} days before reminder`, remaindDate);
         }
-        await trigerRemainder(context,`Remainder ${daysBefore} days Before`);
+        
+        // Re-fetch subscription to ensure user data is available
+        if(dayjs().isSame(remaindDate,'day')){
+            const freshSubscription = await fetchSubscriptionDetails(context, subscriptionId);
+            await trigerRemainder(context,`${daysBefore} days before reminder`, freshSubscription);
+        }
     }
 });
 
 const fetchSubscriptionDetails = async (context, subscriptionId) => {
     //fetch subscription details from database
     return await context.run('get subscription', async () => {
-        return Subscription.findById(subscriptionId).populate('user', 'name email');
+        const subscription = await Subscription.findById(subscriptionId).populate('user', 'name email');
+        console.log('Fetched subscription with user:', subscription);
+        // Convert to plain object to ensure it serializes correctly
+        return subscription.toObject();
     });
 }
 
@@ -40,11 +48,29 @@ const sleepUntilRemainder = async (context,label,date) => {
     console.log(`sleeping until ${label} remaind date: ${date.format('YYYY-MM-DD')}`);
     await context.sleepUntil(label, date.toDate());
 }
-
-const trigerRemainder = async(context,label) => {
-    return await context.run(label,()=>{
-        console.log(`Triggering ${label} remainder`);
-        //send SMS,email,notification logic here
-
-    })
+const trigerRemainder = async(context, label, subscription) => {
+    console.log(`Triggering ${label} remainder`);
+    console.log('Subscription in trigger:', subscription);
+    
+    if(!subscription || !subscription.user) {
+        console.error('Subscription or user is undefined');
+        return;
+    }
+    
+    await context.run(`send email for ${label}`, async () => {
+        await sendRemainderEmail({
+            to: subscription.user.email,
+            type: label,
+            subscription: subscription
+        });
+    });
 }
+// {
+//     "name":"Amazon Prine",
+//     "price":199.9,
+//     "currency":"INR",
+//     "frequency":"monthly",
+//     "category":"entertainment",
+//     "startDate":"2026-01-20T16:34:55.714+00:00",
+//     "paymentMethod":"upi"
+//   }
