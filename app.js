@@ -33,3 +33,13 @@ app.listen(PORT, async() => {
 });
 
 export default app;
+
+// {
+//     "name":"Netflix Preminum",
+//     "price":15.99,
+//     "currency":"INR",
+//     "frequency":"monthly",
+//     "category":"entertainment",
+//     "startDate":"2026-01-20T16:34:55.714+00:00",
+//     "paymentMethod":"upi"
+//   }
